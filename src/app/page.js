@@ -52,6 +52,17 @@ export default function Home() {
     } else {
       document.documentElement.classList.remove("dark")
     }
+
+    // Initialize persistent session ID on first visit
+    let storedSessionId = localStorage.getItem("gearguide_session_id")
+    if (!storedSessionId) {
+      try {
+        storedSessionId = crypto.randomUUID()
+        localStorage.setItem("gearguide_session_id", storedSessionId)
+      } catch (e) {
+        console.error("Failed to generate UUID:", e)
+      }
+    }
   }, [])
 
   // Load Conversations once user info is loaded
@@ -204,8 +215,9 @@ export default function Home() {
     setIsTyping(true)
 
     try {
-      // Associate sessionId with the authenticated Clerk user ID
-      const n8nSessionId = `${user.id}_${activeConversationId}`
+      // Get the active session ID (Clerk user ID if logged in, fallback to local storage UUID)
+      const activeSessionId = user?.id || (typeof window !== "undefined" ? localStorage.getItem("gearguide_session_id") : null) || "default-session"
+      const n8nSessionId = `${activeSessionId}_${activeConversationId}`
 
       // Send message to our Next.js API route proxying n8n
       const response = await fetch("/api/chat", {
