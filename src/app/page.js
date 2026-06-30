@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { useUser, useClerk } from "@clerk/nextjs"
+import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -13,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 export default function Home() {
   const { user, isLoaded } = useUser()
   const clerk = useClerk()
+  const router = useRouter()
   
   const [conversations, setConversations] = useState([])
   const [activeConversationId, setActiveConversationId] = useState("")
@@ -23,6 +25,14 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(true)
   const [mounted, setMounted] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const handleSettingsClick = () => {
+    if (!user) {
+      router.push("/sign-in")
+    } else {
+      setSettingsOpen(true)
+    }
+  }
   
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -350,7 +360,7 @@ export default function Home() {
               <Button
                 variant="ghost"
                 className="w-full justify-start text-sm hover:bg-secondary/50 font-medium"
-                onClick={() => setSettingsOpen(true)}
+                onClick={handleSettingsClick}
               >
                 <Settings className="mr-2.5 h-4 w-4 text-muted-foreground" />
                 Settings
@@ -401,7 +411,7 @@ export default function Home() {
             
             {/* User Profile Avatar click opens the settings menu */}
             <div 
-              onClick={() => setSettingsOpen(true)}
+              onClick={handleSettingsClick}
               className="cursor-pointer hover:opacity-85 transition-opacity"
             >
               <Avatar className="h-8 w-8 border bg-card">
