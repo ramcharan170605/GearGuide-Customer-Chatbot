@@ -16,8 +16,9 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
     
-    // Call the production webhook (configurable via env variable)
+    // Call the production webhook via POST (matching n8n's updated webhook configuration)
     const webhookUrl = process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL || 
+
                        process.env.N8N_WEBHOOK_URL || 
                        'https://charansurebrec.qzz.io/webhook/5025032e-9143-4ed2-808e-11f56d04a4ea';
 
