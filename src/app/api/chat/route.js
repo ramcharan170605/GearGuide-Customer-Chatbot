@@ -21,17 +21,18 @@ export async function POST(request) {
                        process.env.N8N_WEBHOOK_URL || 
                        'https://charansurebrec.qzz.io/webhook/5025032e-9143-4ed2-808e-11f56d04a4ea';
 
-    const params = new URLSearchParams({
-      chatInput: message,
-      sessionId: sessionId || 'default-session'
-    });
-    
-    const response = await fetch(`${webhookUrl}?${params.toString()}`, {
-      method: 'GET',
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
+      },
+      body: JSON.stringify({
+        chatInput: message,
+        sessionId: sessionId || 'default-session'
+      })
     });
+
 
     
     if (!response.ok) {
