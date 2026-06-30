@@ -1,15 +1,19 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from "react"
-import { Send, Sparkles, Loader2, MessageSquare, Plus, Settings, Trash2, Moon, Sun, Menu, ChevronLeft } from "lucide-react"
+import { Send, Sparkles, Loader2, MessageSquare, Plus, Settings, Trash2, Moon, Sun, Menu, ChevronLeft, X } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { useUser, useClerk } from "@clerk/nextjs"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 export default function Home() {
+  const { user, isLoaded } = useUser()
+  const clerk = useClerk()
+  
   const [conversations, setConversations] = useState([])
   const [activeConversationId, setActiveConversationId] = useState("")
   const [input, setInput] = useState("")
@@ -18,6 +22,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [darkMode, setDarkMode] = useState(true)
   const [mounted, setMounted] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -37,9 +42,14 @@ export default function Home() {
     } else {
       document.documentElement.classList.remove("dark")
     }
+  }, [])
 
-    // Load Conversations from LocalStorage
-    const savedConvs = localStorage.getItem("conversations")
+  // Load Conversations once user info is loaded
+  useEffect(() => {
+    if (!mounted || !isLoaded || !user) return
+
+    const storageKey = `conversations_${user.id}`
+    const savedConvs = localStorage.getItem(storageKey)
     if (savedConvs) {
       try {
         const parsed = JSON.parse(savedConvs)
@@ -63,13 +73,14 @@ export default function Home() {
     }
     setConversations([initialConv])
     setActiveConversationId(initialId)
-  }, [])
+  }, [mounted, isLoaded, user])
 
-  // Persist Conversations to LocalStorage
+  // Persist Conversations when they change
   useEffect(() => {
-    if (!mounted) return
-    localStorage.setItem("conversations", JSON.stringify(conversations))
-  }, [conversations, mounted])
+    if (!mounted || !user) return
+    const storageKey = `conversations_${user.id}`
+    localStorage.setItem(storageKey, JSON.stringify(conversations))
+  }, [conversations, mounted, user])
 
   // Scroll to bottom when messages or typing state changes
   const scrollToBottom = () => {
@@ -154,7 +165,7 @@ export default function Home() {
 
   const handleSendMessage = async (e) => {
     e?.preventDefault()
-    if (input.trim() === "" || isTyping) return
+    if (input.trim() === "" || isTyping || !user) return
 
     const userMessageText = input
     setInput("")
@@ -183,6 +194,9 @@ export default function Home() {
     setIsTyping(true)
 
     try {
+      // Associate sessionId with the authenticated Clerk user ID
+      const n8nSessionId = `${user.id}_${activeConversationId}`
+
       // Send message to our Next.js API route proxying n8n
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -191,7 +205,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           message: userMessageText,
-          sessionId: activeConversationId,
+          sessionId: n8nSessionId,
         }),
       })
 
@@ -199,8 +213,6 @@ export default function Home() {
       
       let replyText = ""
       if (response.ok) {
-        // Handle n8n agent output structure
-        // n8n responds with a string or JSON. Typically: {"output": "reply"} or {"response": "reply"} or direct text.
         if (typeof data === "string") {
           replyText = data
         } else if (data.output) {
@@ -259,8 +271,8 @@ export default function Home() {
     }
   }
 
-  // Prevent hydration mismatches
-  if (!mounted) {
+  // Prevent hydration mismatches and wait for auth info
+  if (!mounted || !isLoaded) {
     return null
   }
 
@@ -338,6 +350,7 @@ export default function Home() {
               <Button
                 variant="ghost"
                 className="w-full justify-start text-sm hover:bg-secondary/50 font-medium"
+                onClick={() => setSettingsOpen(true)}
               >
                 <Settings className="mr-2.5 h-4 w-4 text-muted-foreground" />
                 Settings
@@ -373,18 +386,31 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {activeConversation?.messages.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={clearChatHistory}
-                className="text-xs text-muted-foreground hover:text-foreground hover:bg-secondary"
+                className="text-xs text-muted-foreground hover:text-foreground hover:bg-secondary h-8 px-2.5"
               >
                 <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                 Clear Chat
               </Button>
             )}
+            
+            {/* User Profile Avatar click opens the settings menu */}
+            <div 
+              onClick={() => setSettingsOpen(true)}
+              className="cursor-pointer hover:opacity-85 transition-opacity"
+            >
+              <Avatar className="h-8 w-8 border bg-card">
+                <AvatarImage src={user?.imageUrl} />
+                <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
+                  {user?.fullName?.split(' ').map(n => n[0]).join('') || 'U'}
+                </AvatarFallback>
+              </Avatar>
+            </div>
           </div>
         </header>
 
@@ -406,7 +432,7 @@ export default function Home() {
                 transition={{ delay: 0.2 }}
                 className="text-2xl font-bold tracking-tight mb-2 bg-gradient-to-r from-foreground via-foreground/90 to-foreground/75 bg-clip-text text-transparent"
               >
-                GearGuide Chatbot
+                Welcome, {user?.firstName || 'User'}
               </motion.h2>
               <motion.p
                 initial={{ y: 10, opacity: 0 }}
@@ -460,8 +486,9 @@ export default function Home() {
 
                     {msg.isUser && (
                       <Avatar className="h-8 w-8 border bg-card shrink-0">
+                        <AvatarImage src={user?.imageUrl} />
                         <AvatarFallback className="bg-secondary text-secondary-foreground font-semibold">
-                          U
+                          {user?.fullName?.split(' ').map(n => n[0]).join('') || 'U'}
                         </AvatarFallback>
                       </Avatar>
                     )}
@@ -554,6 +581,75 @@ export default function Home() {
           </form>
         </footer>
       </main>
+
+      {/* Account Settings Modal */}
+      <AnimatePresence>
+        {settingsOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-md bg-card border border-border/80 rounded-2xl shadow-lg p-6 relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold">Account & Settings</h3>
+                <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(false)}>
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              
+              {/* User profile card */}
+              <div className="flex items-center gap-3.5 p-3.5 rounded-xl bg-secondary/40 border border-border/40 mb-6">
+                <Avatar className="h-12 w-12 border bg-card">
+                  <AvatarImage src={user?.imageUrl} />
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
+                    {user?.fullName?.split(' ').map(n => n[0]).join('') || 'U'}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-sm truncate">{user?.fullName || 'User'}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</p>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                {/* Profile Detail */}
+                <div className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/40 transition-colors">
+                  <span className="text-sm font-medium">Profile</span>
+                  <span className="text-xs text-muted-foreground truncate max-w-[200px]">{user?.fullName}</span>
+                </div>
+
+                {/* Manage Account */}
+                <div className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/40 transition-colors">
+                  <span className="text-sm font-medium">Manage Account</span>
+                  <Button variant="outline" size="sm" onClick={() => { setSettingsOpen(false); clerk.openUserProfile(); }}>
+                    Open Profile
+                  </Button>
+                </div>
+                
+                {/* Appearance Toggle */}
+                <div className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/40 transition-colors">
+                  <span className="text-sm font-medium">Appearance</span>
+                  <Button variant="outline" size="sm" onClick={toggleTheme}>
+                    {darkMode ? <Sun className="mr-1.5 h-4 w-4 text-amber-500" /> : <Moon className="mr-1.5 h-4 w-4 text-indigo-500" />}
+                    {darkMode ? "Light" : "Dark"}
+                  </Button>
+                </div>
+                
+                {/* Sign Out */}
+                <div className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/40 transition-colors mt-2">
+                  <span className="text-sm font-medium text-destructive">Sign Out</span>
+                  <Button variant="destructive" size="sm" onClick={() => clerk.signOut()}>
+                    Logout
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
