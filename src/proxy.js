@@ -4,7 +4,7 @@ const isProtectedRoute = createRouteMatcher(["/", "/api/chat(.*)"]);
 
 export const proxy = clerkMiddleware((auth, req) => {
   if (isProtectedRoute(req)) {
-    auth().protect();
+    auth.protect();
   }
 });
 
